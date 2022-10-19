@@ -1,5 +1,5 @@
 import os, struct, zlib
-from typing import List
+from typing import Iterable, List, Tuple
 
 png = 'maze.png'
 path = os.path.join(os.path.dirname(__file__), png)
@@ -27,12 +27,33 @@ class PNG:
         self.comp_meth  : bytes = self.IHDR[4]  # 1B - Compression Method
         self.filt_meth  : bytes = self.IHDR[5]  # 1B - Filter Method
         self.itrl_meth  : bytes = self.IHDR[6]  # 1B - Interlace Method
+
+        # calculated meta data
+        self.px_size    : int   = self.get_px_size()
  
         # get data bytes from all data chunks
         self.IDAT = b''.join(chunk.data for chunk in self.chunks if chunk.type == b'IDAT')
         self.IDAT = zlib.decompress(self.IDAT)
 
-        self.scanlines = self.get_scanlines()
+        self.scanlines      = self.get_scanlines()
+        self.channel_matrix = self.reconstruct()  # remove filters from scanlines
+
+
+
+    def get_px_size(self):
+        
+        # if color type
+        match(self.color_type):
+            case 0:  # greyscale
+                return 1
+            case 2:  # truecolor
+                return 3
+            case 3:  # indexed-color
+                return 1
+            case 4:  # greyscale with alpha
+                return 2
+            case 6:  # truecolor w/ alpha
+                return 4
 
 
     def get_chunks(self) -> List['PNG.Chunk']:
@@ -60,7 +81,7 @@ class PNG:
 
         scanlines = []
 
-        px  = PNG.px_size(self.color_type)
+        px  = self.px_size
         w   = self.width
         h   = self.height
         
@@ -84,24 +105,103 @@ class PNG:
         return scanlines
 
 
-    # STATIC
+    def reconstruct(self):
+        
+        # method to defilter/reconstruct png image data
+        # reconstructing a pixel requires reconstruction of bytes in said pixel
+        # bytes that require reconstruction are named as followed:
+        # 
+        # BYTE STRUCTURE RELATIVE TO X:
+        #  C|B  ==  X-px-row | X-row 
+        #  A|X  ==  X-px     | X
+        #
+        # these reconstructed bytes are then used to calculate the absolute pixel data
+        # calculations are based on specified filter method
 
-    @staticmethod
-    def px_size(color_type: int):
-            
-            # if color type
-            match(color_type):
-                case 0:  # greyscale
-                    return 1
-                case 2:  # truecolor
-                    return 3
-                case 3:  # indexed-color
-                    return 1
-                case 4:  # greyscale with alpha
-                    return 2
-                case 6:  # truecolor w/ alpha
-                    return 4
 
+        ### INIT
+
+        recon = []
+        f   = lambda r : self.scanlines[r][0]
+        pxs = lambda r : self.scanlines[r][1] 
+
+        def get_x(row, px, B):
+            return pxs(row)[px][B]
+
+        
+        # FILTER reconstruction methods as specified by ISO standard
+        def none(pos: Iterable[int]):   # filter method 0
+            return get_x(*pos)
+
+        def sub(pos: Iterable[int]):    # filter method 1
+            return (get_x(*pos) + recon_a(*pos)) % 256
+        
+        # not tested
+        def up(pos: Iterable[int]):     # filter method 2
+            return get_x(*pos) + recon_b(pos)
+
+        # not tested
+        def avg(pos: Iterable[int]):    # filter method 3
+            return get_x + (recon_a(*pos)) + recon_b(*pos) >> 1
+
+        # not tested
+        def paeth(pos: Iterable[int]):  # filter method 4
+
+            def predictor(a,b,c):
+
+                p = a + b - c
+                pa = abs(p - a)
+                pb = abs(p - b)
+                pc = abs(p - c)
+
+                if pa <= pb and pa <= pc:
+                    Pr = a
+                elif pb <= pc:
+                    Pr = b
+                else:
+                    Pr = c
+                return Pr
+
+            return get_x(*pos) + predictor(recon_a(*pos), recon_b(*pos), recon_c(*pos))
+
+
+        # RECONSTRUCTION / DEFILTERING
+        def recon_a(row, px, B):
+            return recon[row][px-1][B] if px else 0
+
+        def recon_b(row, px, B):
+            return recon[row-1][px][B] if row else 0
+
+        def recon_c(row, px, B):
+            return recon[row-1][px-1][B] if row and px else 0
+
+        def recon_pixel(row, px) -> Tuple['int']:
+
+            filters = [none, sub, up, avg, paeth]
+            px_new  = []
+
+            for B in range(self.px_size):
+                x_pos   = (row, px, B)
+                recon_x = filters[f(row)](x_pos)
+                px_new.append(recon_x)
+
+            return tuple(px_new)
+
+
+        ### MAIN
+        recon  = []
+
+        for row in range(self.height):
+            recon.append([])  # empty row
+
+            for px in range(self.width):
+                # append reconstructed pixel directly to row
+                # because new matrix datastructure doesn't include a filter field at row[0]
+                recon[row].append(recon_pixel(row, px))
+
+        return recon
+
+    ### STATIC
 
     # VALIDATION
 
@@ -132,7 +232,7 @@ class PNG:
             )
 
 
-    # DATA STRUCTURES
+    ### DATA STRUCTURES
 
     class Chunk:
 
@@ -165,24 +265,27 @@ class PNG:
             self.end    = start + 12 + self.length
 
 
-png = PNG(path)
-
-print('_______________')
-for scanline in png.scanlines:
-    print(png.scanlines.index(scanline), '\t', scanline)
-print('_______________\n')
-
-
+def maze_print(matrix, ch='H', sep=' '):
+    for row in matrix:
+        for px in row:
+            s = ch+sep if px else ' '+sep
+            print(s, end='')
+        print()
 
 
+def maze_matrix_walls(png, inverted=False):
+    matrix = []
+    
+    for row in range(png.height):
+        matrix.append([])  # new row
+
+        for px in range(png.width):
+            matrix[row].append([])  # new cell
+            filled = png.channel_matrix[row][px] == (0,0,0,255)
+            matrix[row][px] = filled ^ inverted
+    
+    return matrix
 
 
-
-
-
-
-
-# w = h = 13
-# pixel = w*4
-# for i in range(0, (h*pixel)+h, pixel+1):
-#     print(png.IDAT[i:i+pixel+1])
+maze = maze_matrix_walls(PNG(path), inverted=False)
+maze_print(maze)
