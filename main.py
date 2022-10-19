@@ -287,5 +287,6 @@ def maze_matrix_walls(png, inverted=False):
     return matrix
 
 
-maze = maze_matrix_walls(PNG(path), inverted=False)
-maze_print(maze)
+if __name__=="__main__":
+    maze = maze_matrix_walls(PNG(path), inverted=False)
+    maze_print(maze)
