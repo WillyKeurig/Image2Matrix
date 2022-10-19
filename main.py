@@ -1,7 +1,7 @@
 import os, struct, zlib
 from typing import Iterable, List, Tuple
 
-png = 'maze.png'
+png = 'maze.png'  # these images are generated with: https://keesiemeijer.github.io/maze-generator
 path = os.path.join(os.path.dirname(__file__), png)
 
 class PNG:
