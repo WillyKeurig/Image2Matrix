@@ -1,19 +1,16 @@
-import os, struct, zlib
+import os, sys, struct, zlib
 from typing import Iterable, List, Tuple
-
-png = 'maze.png'  # these images are generated with: https://keesiemeijer.github.io/maze-generator
-path = os.path.join(os.path.dirname(__file__), png)
 
 
 class PNG:
     signature = b'\x89PNG\r\n\x1a\n'
 
-    def __init__(self, path):
+    def __init__(self, png_path):
 
         # exception if file signature not valid
-        PNG.validate_signature(path)
+        PNG.validate_signature(png_path)
 
-        self.path = path
+        self.path = png_path
         self.chunks = self.get_chunks()
 
         # meta data from IHDR
@@ -61,7 +58,7 @@ class PNG:
 
         while 1:
             # add chunk to PNG instance
-            chunk = PNG.Chunk(cursor)
+            chunk = PNG.Chunk(cursor, self.path)
             chunks.append(chunk)
 
             # set cursor to end of current/start of next
@@ -226,7 +223,7 @@ class PNG:
 
     class Chunk:
 
-        def __init__(self, start: int):
+        def __init__(self, start: int, png_path):
             self.start: int
             self.end: int  # actual last index == end-1
 
@@ -236,7 +233,7 @@ class PNG:
             self.crc: bytes  # unsigned int
             self.valid: bool
 
-            with open(path, 'rb') as f:
+            with open(png_path, 'rb') as f:
                 f.seek(start)  # start of chunk
                 self.length, self.type = struct.unpack('>I4s', f.read(8))
 
@@ -275,6 +272,13 @@ def maze_matrix_walls(png, inverted=False):
     return matrix
 
 
-if __name__ == "__main__":
-    maze = maze_matrix_walls(PNG(path), inverted=False)
+def main():
+    if len(sys.argv) == 1:
+        raise Exception("Missing argument: path to .png")
+    png = sys.argv[1]
+    png_path = os.path.join(os.path.dirname(__file__), png)
+    maze = maze_matrix_walls(PNG(png_path))
     maze_print(maze)
+
+if __name__ == "__main__":
+    main()
