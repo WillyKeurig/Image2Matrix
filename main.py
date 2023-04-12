@@ -1,4 +1,6 @@
-import os, sys, struct, zlib
+import struct
+import zlib
+
 from typing import Iterable, List, Tuple
 
 
@@ -248,37 +250,3 @@ class PNG:
 
             self.start = start
             self.end = start + 12 + self.length
-
-
-def maze_print(matrix, ch='H', sep=' '):
-    for row in matrix:
-        for px in row:
-            s = ch + sep if px else ' ' + sep
-            print(s, end='')
-        print()
-
-
-def maze_matrix_walls(png, inverted=False):
-    matrix = []
-
-    for row in range(png.height):
-        matrix.append([])  # new row
-
-        for px in range(png.width):
-            matrix[row].append([])  # new cell
-            filled = png.channel_matrix[row][px] == (0, 0, 0, 255)
-            matrix[row][px] = filled ^ inverted
-
-    return matrix
-
-
-def main():
-    if len(sys.argv) == 1:
-        raise Exception("Missing argument: path to .png")
-    png = sys.argv[1]
-    png_path = os.path.join(os.path.dirname(__file__), png)
-    maze = maze_matrix_walls(PNG(png_path))
-    maze_print(maze)
-
-if __name__ == "__main__":
-    main()
